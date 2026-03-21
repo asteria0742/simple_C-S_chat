@@ -10,6 +10,7 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <cstdint>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -23,13 +24,60 @@ using namespace std;
 mutex cout_mutex;
 atomic<bool> isExit(false);
 
+// 确保发送恰好 n 字节
+bool send_exact(int sock, const void* buf, size_t n)
+{
+    const char* ptr = (const char*)buf;
+    size_t sent = 0;
+    while (sent < n)
+    {
+        int r = send(sock, ptr + sent, n - sent, 0);
+        if (r <= 0) return false;
+        sent += r;
+    }
+    return true;
+}
+
+// 确保接收恰好 n 字节
+bool recv_exact(int sock, void* buf, size_t n)
+{
+    char* ptr = (char*)buf;
+    size_t received = 0;
+    while (received < n)
+    {
+        int r = recv(sock, ptr + received, n - received, 0);
+        if (r <= 0) return false;
+        received += r;
+    }
+    return true;
+}
+
+// 发送：4字节包头（消息长度） + 消息内容
+bool send_msg(int sock, const string& msg)
+{
+    uint32_t net_len = htonl((uint32_t)msg.size());
+    if (!send_exact(sock, &net_len, 4)) return false;
+    if (!msg.empty() && !send_exact(sock, msg.c_str(), msg.size())) return false;
+    return true;
+}
+
+// 接收：先读4字节包头得到长度，再读恰好该长度的内容
+bool recv_msg(int sock, string& out)
+{
+    uint32_t net_len;
+    if (!recv_exact(sock, &net_len, 4)) return false;
+    uint32_t len = ntohl(net_len);
+    out.resize(len);
+    if (len > 0 && !recv_exact(sock, &out[0], len)) return false;
+    return true;
+}
+
 void recv_thread(int sock)
 {
-    char buffer[1024];
+    string msg;
     while (!isExit)
     {
-        int n = recv(sock, buffer, sizeof(buffer) - 1, 0);
-        if (n <= 0)
+        if (!recv_msg(sock, msg))
         {
             if (!isExit)
             {
@@ -39,14 +87,13 @@ void recv_thread(int sock)
             isExit = true;
             break;
         }
-        buffer[n] = '\0';
 
         {
             lock_guard<mutex> lock(cout_mutex);
-            cout << "\rServer: " << buffer << "\nClient: " << flush;
+            cout << "\rServer: " << msg << "\nClient: " << flush;
         }
 
-        if (string(buffer) == "#")
+        if (msg == "#")
         {
             isExit = true;
             break;
@@ -58,8 +105,6 @@ int main()
 {
     int client;
     int portNum = 1500;
-    int bufsize = 1024;
-    char buffer[bufsize];
     const char* ip = "127.0.0.1";
 
     struct sockaddr_in server_addr;
@@ -87,7 +132,9 @@ int main()
     }
 
     cout << "=> Awaiting confirmation from the server..." << endl;
-    recv(client, buffer, bufsize, 0);
+    string greeting;
+    recv_msg(client, greeting);
+    cout << greeting << endl;
     cout << "=> Connection confirmed, you are good to go...";
     cout << "\n\n=> Enter # to end the connection\n" << endl;
 
@@ -107,7 +154,7 @@ int main()
         if (isExit)
             break;
 
-        send(client, line.c_str(), line.size(), 0);
+        send_msg(client, line);
 
         if (line == "#")
         {

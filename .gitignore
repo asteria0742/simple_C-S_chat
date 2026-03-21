@@ -1,0 +1,7 @@
+# Compiled binaries
+server
+client
+
+# VSCode
+.vscode/
+
