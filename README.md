@@ -13,8 +13,11 @@ Video: https://www.youtube.com/watch?v=IydkqseK6oQ
 # Compilation
 
 1. Compile the server.cpp file first and then the client.cpp file.
-2. To send a message, run your client.cpp and type "your-message *" *Notice that you need to add an asterisk at the end of each sentence to send a message.
-3. Same goes for server.cpp
+```
+g++ -std=c++17 -o server server.cpp -pthread
+g++ -std=c++17 -o client client.cpp -pthread
+```
+2. To close the connection, type a "#" and send it.
 
 # Limitations
 
